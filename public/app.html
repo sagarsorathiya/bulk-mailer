@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bulk Mailer Portal</title>
+  <meta name="description" content="Bulk Mailer — compose, upload data, and send bulk personalised emails with individual attachments." />
+  <link rel="stylesheet" href="/assets/style.css" />
+  <!-- Quill rich-text editor (served locally — CDN removed for internal network compatibility) -->
+  <link rel="stylesheet" href="/assets/quill.snow.css" />
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="site-header" role="banner">
+  <div class="logo">
+    <span>📧</span>
+    <span>Bulk Mailer</span>
+    <span class="badge">Beta</span>
+  </div>
+  <div class="user-bar">
+    <nav>
+      <a href="/dashboard.html" id="nav-dash">Dashboard</a>
+      <a href="/app.html" class="active" id="nav-compose">New Job</a>
+      <a href="/logs.html" id="nav-logs">Send Logs</a>
+    </nav>
+    <span id="user-dept-badge" class="dept-badge" title="Logged-in user"></span>
+    <button id="btn-logout" type="button">Sign Out</button>
+  </div>
+</header>
+
+<!-- ── Main ── -->
+<main class="main-container" role="main">
+
+  <!-- Global alerts -->
+  <div id="global-alert" class="alert hidden" role="alert"></div>
+
+  <div class="card">
+    <div class="card-header">
+      <h2>New Bulk Mail Job</h2>
+      <span id="job-id-badge" class="badge badge-info hidden">Job #<span id="current-job-id"></span></span>
+    </div>
+    <div class="card-body">
+
+      <!-- Stepper tab bar — Step 1: Data → Step 2: Compose → Step 3: Send -->
+      <div class="stepper" role="tablist" style="border-bottom:2px solid var(--clr-border);">
+        <button id="tab-btn-data" class="step active" role="tab" aria-selected="true" aria-controls="tab-data">
+          <span class="step-num" id="step-num-data">1</span> Data
+        </button>
+        <div class="step-connector" id="conn-1"></div>
+        <button id="tab-btn-compose" class="step" role="tab" aria-selected="false" aria-controls="tab-compose">
+          <span class="step-num" id="step-num-compose">2</span> Compose
+        </button>
+        <div class="step-connector" id="conn-2"></div>
+        <button id="tab-btn-send" class="step" role="tab" aria-selected="false" aria-controls="tab-send">
+          <span class="step-num" id="step-num-send">3</span> Send
+        </button>
+      </div>
+
+      <!-- ════════════════════════════════════════
+           TAB 1 — DATA
+           Upload Excel + choose attachment mode first so columns are known before composing.
+           ════════════════════════════════════════ -->
+      <div id="tab-data" class="tab-pane active" role="tabpanel" aria-labelledby="tab-btn-data">
+
+        <!-- Sample Excel download banner -->
+        <div class="sample-excel-banner">
+          <div class="sample-excel-info">
+            <span class="sample-excel-icon">📋</span>
+            <div>
+              <strong>Not sure about the format?</strong>
+              <div style="font-size:12px;color:var(--clr-text-muted);margin-top:2px">Download the sample file to see required columns and example data.</div>
+            </div>
+          </div>
+          <a id="btn-download-sample" href="/api/jobs/sample-excel" class="btn btn-outline btn-sm" download>
+            ⬇ Download Sample Excel
+          </a>
+        </div>
+
+        <!-- Attachment Mode — placed here so ZIP upload appears on the same tab as Excel upload -->
+        <div class="form-group">
+          <label>Attachment Mode <span class="required">*</span></label>
+          <div class="toggle-group" role="group" aria-label="Attachment mode">
+            <div id="mode-zip"     class="toggle-option" data-mode="zip"     role="radio" aria-checked="false" tabindex="0">📦 ZIP Bundle</div>
+            <div id="mode-network" class="toggle-option selected" data-mode="network" role="radio" aria-checked="true"  tabindex="0">🌐 Network Path</div>
+          </div>
+          <div class="form-hint mt-8">
+            <span id="mode-hint-zip"     class="hidden">ZIP: upload a ZIP containing all attachment files. The <code>AttachmentPath</code> column in your Excel = filename inside ZIP.</span>
+            <span id="mode-hint-network" class="">Network: the <code>AttachmentPath</code> column in your Excel = full UNC path or relative path from the file server.</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Upload Excel File <span class="required">*</span></label>
+          <div id="excel-drop-zone" class="upload-area" role="button" tabindex="0" aria-label="Upload Excel file">
+            <input id="excel-input" type="file" accept=".xlsx,.xls,.csv" aria-label="Choose Excel file" />
+            <div class="upload-icon">📊</div>
+            <div class="upload-title">Drop .xlsx or .csv here, or click to browse</div>
+            <div class="upload-hint">Max 50 MB · First row must be header row · Required columns: Email, AttachmentPath</div>
+          </div>
+          <div id="excel-file-name" class="form-hint mt-8 hidden"></div>
+        </div>
+
+        <!-- ZIP upload — shown only in ZIP mode -->
+        <div id="zip-upload-section" class="form-group hidden">
+          <label>Upload ZIP File <span class="required">*</span></label>
+          <div id="zip-drop-zone" class="upload-area" role="button" tabindex="0" aria-label="Upload ZIP file">
+            <input id="zip-input" type="file" accept=".zip" aria-label="Choose ZIP file" />
+            <div class="upload-icon">📦</div>
+            <div class="upload-title">Drop .zip containing all attachment files</div>
+            <div class="upload-hint">Max 500 MB</div>
+          </div>
+          <div id="zip-file-name" class="form-hint mt-8 hidden"></div>
+        </div>
+
+        <!-- Upload action -->
+        <button id="btn-upload-job" class="btn btn-primary" disabled>
+          <span id="upload-btn-text">Upload &amp; Continue</span>
+          <span id="upload-spinner" class="spinner hidden" aria-hidden="true"></span>
+        </button>
+
+        <!-- Validation status -->
+        <div id="validation-section" class="mt-24 hidden">
+          <div class="card">
+            <div class="card-header"><h2>Data Validation</h2></div>
+            <div class="card-body">
+              <div id="validation-rows"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Column list & chips -->
+        <div id="columns-section" class="mt-24 hidden">
+          <div class="card">
+            <div class="card-header"><h2>Detected Columns</h2></div>
+            <div class="card-body">
+              <p class="text-muted" style="font-size:13px;margin-bottom:10px">These columns will be available as <code>{{placeholder}}</code> chips in the Compose step. Click any chip there to insert it.</p>
+              <div id="chips-data" class="chips-container"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preview table -->
+        <div id="preview-section" class="mt-24 hidden">
+          <div class="card">
+            <div class="card-header"><h2>Preview — First 3 Rows</h2></div>
+            <div class="card-body">
+              <div class="table-wrap">
+                <table id="preview-table" class="data-table" aria-label="Data preview">
+                  <thead><tr id="preview-thead"></tr></thead>
+                  <tbody id="preview-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="data-nav" class="flex-between mt-24 hidden">
+          <button id="btn-reupload" class="btn btn-outline" title="Replace the uploaded Excel with a new file">↩ Re-upload Excel</button>
+          <button id="btn-goto-compose" class="btn btn-primary">Next: Compose Email →</button>
+        </div>
+      </div><!-- /tab-data -->
+
+      <!-- ════════════════════════════════════════
+           TAB 2 — COMPOSE
+           Column chips are now pre-populated from the uploaded Excel.
+           ════════════════════════════════════════ -->
+      <div id="tab-compose" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-compose">
+
+        <div class="form-group">
+          <label for="from-address">From Address <span class="required">*</span></label>
+          <input id="from-address" type="email" class="form-control" placeholder="hr@example.com" required />
+          <div class="form-hint">Must be an approved sender for your department.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="subject-tpl">Subject <span class="required">*</span></label>
+          <input id="subject-tpl" type="text" class="form-control"
+            placeholder="Form 16 for FY 2024-25 — {{Name}}" required />
+          <div class="form-hint">Use <code>{{ColumnName}}</code> placeholders. Click chips below to insert.</div>
+        </div>
+
+        <div class="form-group">
+          <label>Placeholder Chips</label>
+          <!-- Manual insert row — fallback if user wants to type a custom name -->
+          <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+            <input id="manual-placeholder-input" type="text" class="form-control"
+              placeholder="Type a column name, e.g. Name"
+              style="flex:1;max-width:260px"
+              aria-label="Column name to insert as placeholder" />
+            <button id="btn-insert-placeholder" type="button" class="btn btn-outline btn-sm"
+              style="white-space:nowrap">Insert &#123;&#123;&#125;&#125;</button>
+          </div>
+          <!-- Auto-populated chips from uploaded Excel -->
+          <div id="chips-compose" class="chips-container">
+            <span class="chip-empty">
+              No columns loaded yet —
+              <a href="#" id="link-goto-data" style="color:var(--clr-accent);text-decoration:underline">go to Step 1 to upload your Excel</a>
+              and chips will appear here automatically.
+            </span>
+          </div>
+          <div class="form-hint">Click a chip to insert the placeholder at the cursor position in the subject or body.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="body-tpl-editor">Email Body <span class="required">*</span></label>
+          <div id="body-tpl-editor" class="quill-editor" aria-label="Email body"></div>
+          <div class="form-hint">Use the toolbar to format your message. Click a chip above to insert <code>{{ColumnName}}</code> at cursor.</div>
+        </div>
+
+        <div class="flex-between mt-24">
+          <button id="btn-goto-data" class="btn btn-outline">← Back to Data</button>
+          <button id="btn-goto-send" class="btn btn-primary">Next: Review &amp; Send →</button>
+        </div>
+      </div><!-- /tab-compose -->
+
+      <!-- ════════════════════════════════════════
+           TAB 3 — SEND
+           ════════════════════════════════════════ -->
+      <div id="tab-send" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-send">
+
+        <!-- Summary -->
+        <div id="send-summary" class="summary-grid">
+          <div class="summary-item">
+            <div class="label">Recipients</div>
+            <div class="value" id="sum-total">—</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">From</div>
+            <div class="value" id="sum-from" style="font-size:13px;word-break:break-all">—</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Mode</div>
+            <div class="value" id="sum-mode">—</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Sent</div>
+            <div class="value" id="sum-sent" style="color:var(--clr-success)">0</div>
+          </div>
+          <div class="summary-item">
+            <div class="label">Failed</div>
+            <div class="value" id="sum-failed" style="color:var(--clr-danger)">0</div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex gap-8 mb-16" style="flex-wrap:wrap;align-items:center">
+          <button id="btn-preview-mails" class="btn btn-outline">🔍 Preview 3 Mails</button>
+          <button id="btn-start-job" class="btn btn-accent btn-lg" disabled>🚀 Send Now</button>
+          <button id="btn-pause-job"  class="btn btn-outline hidden">⏸ Pause</button>
+          <button id="btn-retry-job"  class="btn btn-outline hidden">🔁 Retry Failed</button>
+        </div>
+
+        <!-- Schedule -->
+        <div class="form-group">
+          <label for="schedule-at">Schedule Send (optional)</label>
+          <input id="schedule-at" type="datetime-local" class="form-control" style="max-width:280px" />
+          <div class="form-hint">Leave blank to send immediately when you click Send Now.</div>
+        </div>
+
+        <!-- Progress -->
+        <div id="progress-section" class="mt-24 hidden">
+          <div class="flex-between mb-16">
+            <strong>Progress</strong>
+            <span id="progress-label" class="badge badge-info">0 / 0</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div id="progress-bar" class="progress-bar" style="width:0%" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+          <div class="flex-between mt-8">
+            <span id="job-status-badge" class="badge badge-secondary">Pending</span>
+            <span id="eta-label" class="text-muted" style="font-size:12px"></span>
+          </div>
+        </div>
+
+        <!-- Live log table -->
+        <div id="live-log-section" class="mt-24 hidden">
+          <div class="card">
+            <div class="card-header">
+              <h2>Live Send Log</h2>
+              <a id="btn-export-csv" href="#" class="btn btn-sm btn-outline hidden">⬇ Export CSV</a>
+            </div>
+            <div class="card-body" style="padding:0">
+              <div class="table-wrap">
+                <table class="data-table" aria-label="Live send log">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Email</th>
+                      <th>Subject</th>
+                      <th>Status</th>
+                      <th>Sent At</th>
+                      <th>Error</th>
+                    </tr>
+                  </thead>
+                  <tbody id="live-log-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Completion banner (shown after job finishes) -->
+        <div id="completion-banner" class="completion-banner hidden" role="status">
+          <h3>🎉 All Done!</h3>
+          <p id="completion-msg">Job completed successfully.</p>
+          <div style="margin-top:20px">
+            <button id="btn-new-job" class="btn btn-primary">+ New Job</button>
+            <a id="completion-logs-link" href="/logs.html" class="btn btn-outline" style="margin-left:8px">📊 View Logs</a>
+          </div>
+        </div>
+
+      </div><!-- /tab-send -->
+
+    </div><!-- /card-body -->
+  </div><!-- /card -->
+</main>
+
+<!-- ════════════════════════════════════════
+     MODAL — Preview Mails
+     ════════════════════════════════════════ -->
+<div id="preview-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-label="Mail Preview">
+  <div class="modal">
+    <div class="modal-header">
+      <span>📧 Mail Preview — First 3 Recipients</span>
+      <button class="modal-close" id="close-preview-modal" aria-label="Close preview">&times;</button>
+    </div>
+    <div class="modal-body" id="preview-modal-body">
+      <!-- Filled dynamically -->
+    </div>
+    <div class="modal-footer">
+      <button id="btn-close-preview" class="btn btn-outline">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     MODAL — Confirm Send
+     ════════════════════════════════════════ -->
+<div id="confirm-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-label="Confirm send">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <span>⚠️ Confirm Send</span>
+      <button class="modal-close" id="close-confirm-modal" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-msg">Are you sure you want to send emails to <strong id="confirm-count"></strong> recipients?</p>
+      <p class="text-muted mt-8" style="font-size:12px">This action cannot be undone. Each recipient will receive an individual email.</p>
+    </div>
+    <div class="modal-footer">
+      <button id="btn-cancel-confirm" class="btn btn-outline">Cancel</button>
+      <button id="btn-confirm-send"   class="btn btn-accent">Yes, Send Now</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/quill.min.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>

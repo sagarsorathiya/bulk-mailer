@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Send Logs — Bulk Mailer</title>
+  <meta name="description" content="View and export send logs for all your Bulk Mailer jobs." />
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="site-header" role="banner">
+  <div class="logo">
+    <span>📧</span>
+    <span>Bulk Mailer</span>
+  </div>
+  <div class="user-bar">
+    <nav>
+      <a href="/dashboard.html" id="nav-dash">Dashboard</a>
+      <a href="/app.html"  id="nav-compose">New Job</a>
+      <a href="/logs.html" class="active" id="nav-logs">Send Logs</a>
+    </nav>
+    <span id="user-dept-badge" class="dept-badge"></span>
+    <button id="btn-logout" type="button">Sign Out</button>
+  </div>
+</header>
+
+<!-- ── Main ── -->
+<main class="main-container" role="main">
+
+  <div id="global-alert" class="alert hidden" role="alert"></div>
+
+  <!-- ── Filters ── -->
+  <div class="card mb-16" style="margin-bottom:16px">
+    <div class="card-header">
+      <h2>Send Logs</h2>
+      <button id="btn-refresh" class="btn btn-sm btn-outline">↻ Refresh</button>
+    </div>
+    <div class="card-body">
+      <div class="flex gap-8" style="flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin-bottom:0;flex:1;min-width:140px">
+          <label for="filter-job-id" style="font-size:12px">Job ID</label>
+          <input id="filter-job-id" type="number" class="form-control" placeholder="All" min="1" />
+        </div>
+        <div class="form-group" style="margin-bottom:0;flex:1;min-width:140px">
+          <label for="filter-status" style="font-size:12px">Status</label>
+          <select id="filter-status" class="form-control">
+            <option value="">All Statuses</option>
+            <option value="sent">Sent</option>
+            <option value="failed">Failed</option>
+            <option value="pending">Pending</option>
+            <option value="skipped">Skipped</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;flex:0 0 auto">
+          <label style="font-size:12px;visibility:hidden">Go</label>
+          <button id="btn-filter" class="btn btn-primary">Apply Filter</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Jobs List ── -->
+  <div id="jobs-section" class="card mb-16" style="margin-bottom:16px">
+    <div class="card-header"><h2>Your Jobs</h2></div>
+    <div class="card-body" style="padding:0">
+      <div id="jobs-list-wrap">
+        <div class="text-center text-muted" style="padding:32px">
+          <div class="spinner" style="margin:0 auto 12px"></div>
+          Loading jobs…
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Logs Table ── -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Send Log Entries</h2>
+      <div id="export-area" class="hidden">
+        <a id="btn-export-csv" href="#" class="btn btn-sm btn-outline">⬇ Export CSV</a>
+      </div>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div id="logs-loading" class="text-center text-muted" style="padding:32px">
+        <div class="spinner" style="margin:0 auto 12px"></div>
+        Loading…
+      </div>
+      <div id="logs-table-wrap" class="hidden table-wrap">
+        <table class="data-table" aria-label="Send logs">
+          <thead>
+            <tr>
+              <th>Log ID</th>
+              <th>Job</th>
+              <th>Email</th>
+              <th>Name</th>
+              <th>Subject</th>
+              <th>Attachment</th>
+              <th>Status</th>
+              <th>Sent At</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody id="logs-tbody"></tbody>
+        </table>
+      </div>
+      <div id="logs-empty" class="text-center text-muted hidden" style="padding:40px">
+        No log entries found for the current filter.
+      </div>
+    </div>
+
+    <!-- Pagination -->
+    <div id="pagination-bar" class="card-header hidden" style="justify-content:space-between;border-top:1px solid var(--clr-border);border-bottom:none">
+      <span id="pagination-info" class="text-muted" style="font-size:13px"></span>
+      <div class="flex gap-8">
+        <button id="btn-prev-page" class="btn btn-sm btn-outline" disabled>← Prev</button>
+        <button id="btn-next-page" class="btn btn-sm btn-outline" disabled>Next →</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  let currentPage   = 1;
+  let totalPages    = 1;
+  let currentJobId  = '';
+  let currentStatus = '';
+  let autoRefreshTimer = null;
+
+  // ── Auth check ──
+  async function init() {
+    const meRes  = await fetch('/api/auth/me');
+    const meData = await meRes.json();
+    if (!meData.success) {
+      window.location.href = '/index.html';
+      return;
+    }
+    const u = meData.user;
+    document.getElementById('user-dept-badge').textContent = `${u.displayName || u.username} · ${u.department || ''}`;
+
+    document.getElementById('btn-logout').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/index.html';
+    });
+
+    // Pre-fill filter from URL query params (e.g. dashboard links here with ?jobId=N)
+    const urlParams = new URLSearchParams(window.location.search);
+    const qJobId    = urlParams.get('jobId');
+    if (qJobId && /^\d+$/.test(qJobId)) {
+      currentJobId = qJobId;
+      document.getElementById('filter-job-id').value = qJobId;
+    }
+
+    await loadJobs();
+    await loadLogs();
+  }
+
+  // ── Load jobs list ──
+  async function loadJobs() {
+    const res  = await fetch('/api/jobs');
+    const data = await res.json();
+    const wrap = document.getElementById('jobs-list-wrap');
+
+    if (!data.success || !data.jobs.length) {
+      wrap.innerHTML = '<div class="text-center text-muted" style="padding:24px">No jobs found.</div>';
+      stopAutoRefresh();
+      return;
+    }
+
+    const hasRunning = data.jobs.some(j => j.status === 'running');
+
+    wrap.innerHTML = data.jobs.map(j => {
+      const pct = j.total_rows > 0
+        ? Math.round(((j.sent_count + j.failed_count) / j.total_rows) * 100)
+        : 0;
+      return `
+        <div class="job-row-card">
+          <div class="job-id">#${j.id}</div>
+          <div class="job-info">
+            <div class="job-from">${esc(j.from_address)}</div>
+            <div class="job-meta">
+              ${statusBadge(j.status)} &nbsp;
+              ${j.attachment_mode === 'zip' ? '📦 ZIP' : '🌐 Network'} &nbsp;·&nbsp;
+              ${fmtDate(j.created_at)}
+              ${j.completed_at ? ' → ' + fmtDate(j.completed_at) : ''}
+            </div>
+            <div style="margin-top:5px">
+              <div style="background:var(--clr-border);border-radius:99px;height:5px;width:140px;overflow:hidden">
+                <div style="height:100%;border-radius:99px;width:${pct}%;background:${j.status === 'completed' ? '#22c55e' : 'var(--clr-accent)'}"></div>
+              </div>
+            </div>
+          </div>
+          <div class="job-counts">
+            <div><span class="count-sent">✓ ${j.sent_count}</span> sent</div>
+            <div><span class="count-failed">✗ ${j.failed_count}</span> failed</div>
+            <div class="text-muted" style="font-size:11px">${j.total_rows} total</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+            <button class="btn btn-sm btn-outline" onclick="filterByJob(${j.id})">View Logs</button>
+            ${j.failed_count > 0 ? `<button class="btn btn-sm btn-outline" onclick="retryJob(${j.id})">🔁 Retry</button>` : ''}
+            <button class="btn btn-sm" style="color:var(--clr-danger);border-color:var(--clr-danger);background:transparent"
+              onclick="deleteJob(${j.id})">🗑 Delete</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Auto-refresh every 10 s while any job is running
+    if (hasRunning) {
+      startAutoRefresh();
+    } else {
+      stopAutoRefresh();
+    }
+  }
+
+  function startAutoRefresh() {
+    if (autoRefreshTimer) return;
+    autoRefreshTimer = setInterval(async () => {
+      await loadJobs();
+      await loadLogs();
+    }, 10000);
+  }
+
+  function stopAutoRefresh() {
+    if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+  }
+
+  // ── Load logs ──
+  async function loadLogs() {
+    document.getElementById('logs-loading').classList.remove('hidden');
+    document.getElementById('logs-table-wrap').classList.add('hidden');
+    document.getElementById('logs-empty').classList.add('hidden');
+    document.getElementById('pagination-bar').classList.add('hidden');
+
+    const params = new URLSearchParams({ page: currentPage, limit: 50 });
+    if (currentJobId)  params.set('jobId',  currentJobId);
+    if (currentStatus) params.set('status', currentStatus);
+
+    const res  = await fetch('/api/logs?' + params);
+    const data = await res.json();
+
+    document.getElementById('logs-loading').classList.add('hidden');
+
+    if (!data.success) {
+      showAlert(data.error || 'Failed to load logs.', 'danger');
+      return;
+    }
+
+    totalPages = data.pages || 1;
+
+    if (!data.logs.length) {
+      document.getElementById('logs-empty').classList.remove('hidden');
+      return;
+    }
+
+    // Show export button if filtering by job
+    if (currentJobId) {
+      document.getElementById('export-area').classList.remove('hidden');
+      document.getElementById('btn-export-csv').href = `/api/logs/${currentJobId}/export`;
+    }
+
+    const tbody = document.getElementById('logs-tbody');
+    tbody.innerHTML = data.logs.map(l => `
+      <tr>
+        <td>${l.id}</td>
+        <td><a href="#" onclick="filterByJob(${l.job_id});return false">#${l.job_id}</a></td>
+        <td class="cell-truncate">${esc(l.recipient_email)}</td>
+        <td>${esc(l.recipient_name || '')}</td>
+        <td class="cell-truncate">${esc(l.subject || '')}</td>
+        <td class="cell-truncate">${esc(l.attachment_path || '')}</td>
+        <td>${statusBadge(l.status)}</td>
+        <td style="white-space:nowrap">${l.sent_at ? fmtDate(l.sent_at) : '—'}</td>
+        <td class="cell-truncate" style="color:var(--clr-danger);font-size:12px">${esc(l.error_message || '')}</td>
+      </tr>
+    `).join('');
+
+    document.getElementById('logs-table-wrap').classList.remove('hidden');
+    document.getElementById('pagination-bar').classList.remove('hidden');
+    document.getElementById('pagination-info').textContent = `Page ${currentPage} of ${totalPages} · ${data.total} entries`;
+    document.getElementById('btn-prev-page').disabled = currentPage <= 1;
+    document.getElementById('btn-next-page').disabled = currentPage >= totalPages;
+  }
+
+  // ── Filter helpers ──
+  window.filterByJob = function(jobId) {
+    currentJobId = jobId;
+    currentPage  = 1;
+    document.getElementById('filter-job-id').value = jobId;
+    loadLogs();
+  };
+
+  window.retryJob = async function(jobId) {
+    if (!confirm(`Retry all failed rows for Job #${jobId}?`)) return;
+    const res  = await fetch(`/api/jobs/${jobId}/retry`, { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      showAlert(data.message, 'success');
+      await loadJobs();
+      filterByJob(jobId);
+    } else {
+      showAlert(data.error || 'Retry failed.', 'danger');
+    }
+  };
+
+  window.deleteJob = async function(jobId) {
+    if (!confirm(`Delete Job #${jobId} and all its send logs? This cannot be undone.`)) return;
+    const res  = await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) {
+      showAlert(`Job #${jobId} deleted.`, 'success');
+      // If we were viewing this job's logs, clear the filter
+      if (String(currentJobId) === String(jobId)) {
+        currentJobId = '';
+        document.getElementById('filter-job-id').value = '';
+        document.getElementById('export-area').classList.add('hidden');
+      }
+      await loadJobs();
+      await loadLogs();
+    } else {
+      showAlert(data.error || 'Delete failed.', 'danger');
+    }
+  };
+
+  // ── Event listeners ──
+  document.getElementById('btn-filter').addEventListener('click', () => {
+    currentJobId  = document.getElementById('filter-job-id').value.trim();
+    currentStatus = document.getElementById('filter-status').value;
+    currentPage   = 1;
+    if (currentJobId) {
+      document.getElementById('export-area').classList.remove('hidden');
+      document.getElementById('btn-export-csv').href = `/api/logs/${currentJobId}/export`;
+    } else {
+      document.getElementById('export-area').classList.add('hidden');
+    }
+    loadLogs();
+  });
+
+  document.getElementById('btn-refresh').addEventListener('click', async () => {
+    await loadJobs();
+    await loadLogs();
+  });
+
+  document.getElementById('btn-prev-page').addEventListener('click', () => {
+    if (currentPage > 1) { currentPage--; loadLogs(); }
+  });
+  document.getElementById('btn-next-page').addEventListener('click', () => {
+    if (currentPage < totalPages) { currentPage++; loadLogs(); }
+  });
+
+  // ── Utilities ──
+  function showAlert(msg, type) {
+    const el = document.getElementById('global-alert');
+    el.className = `alert alert-${type}`;
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 5000);
+  }
+
+  function esc(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  }
+
+  function statusBadge(status) {
+    const map = {
+      sent:      'badge-success',
+      failed:    'badge-danger',
+      pending:   'badge-warning',
+      skipped:   'badge-secondary',
+      completed: 'badge-success',
+      running:   'badge-info',
+      paused:    'badge-warning',
+    };
+    return `<span class="badge ${map[status] || 'badge-secondary'}">${esc(status)}</span>`;
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

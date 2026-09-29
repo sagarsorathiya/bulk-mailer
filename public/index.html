@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login — Bulk Mailer</title>
+  <meta name="description" content="Sign in to the Bulk Mailer portal using your Active Directory credentials." />
+  <link rel="stylesheet" href="/assets/style.css" />
+  <style>
+    /* ── Login page background orbs (CSS-only animation) ── */
+    @keyframes float1 { 0%,100%{transform:translate(0,0) scale(1);}  50%{transform:translate(30px,-40px) scale(1.08);} }
+    @keyframes float2 { 0%,100%{transform:translate(0,0) scale(1);}  50%{transform:translate(-25px,30px) scale(.94);} }
+    @keyframes float3 { 0%,100%{transform:translate(0,0) scale(1);}  50%{transform:translate(20px,20px)  scale(1.05);} }
+    @keyframes cardIn { from{opacity:0;transform:translateY(24px);} to{opacity:1;transform:none;} }
+    .login-page { overflow: hidden; position: relative; }
+    .orb {
+      position: absolute; border-radius: 50%;
+      filter: blur(60px); pointer-events: none; opacity: .45;
+    }
+    .orb-1 { width:340px;height:340px; background:var(--clr-accent);    top:-80px;  left:-60px;  animation: float1 9s ease-in-out infinite; }
+    .orb-2 { width:280px;height:280px; background:var(--clr-primary-lt); bottom:-60px; right:-40px; animation: float2 11s ease-in-out infinite; }
+    .orb-3 { width:180px;height:180px; background:#ffffff22;             top:50%;    right:15%;   animation: float3 7s  ease-in-out infinite; }
+    .login-card { animation: cardIn .4s cubic-bezier(.4,0,.2,1) both; position: relative; }
+  </style>
+</head>
+<body class="login-page">
+
+  <!-- Animated background orbs -->
+  <div class="orb orb-1" aria-hidden="true"></div>
+  <div class="orb orb-2" aria-hidden="true"></div>
+  <div class="orb orb-3" aria-hidden="true"></div>
+
+  <div class="login-card" role="main">
+    <div class="login-card-header">
+      <!-- SVG envelope icon -->
+      <div class="logo-mark" aria-hidden="true">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="48" height="48" rx="12" fill="rgba(255,255,255,.15)"/>
+          <path d="M8 14a2 2 0 0 1 2-2h28a2 2 0 0 1 2 2v20a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V14z" stroke="white" stroke-width="2" fill="none"/>
+          <path d="M8 16l16 11L40 16" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h1>Bulk Mailer</h1>
+      <p>Internal bulk mail portal</p>
+    </div>
+
+    <div class="login-card-body">
+      <div id="login-alert" class="alert alert-danger hidden" role="alert"></div>
+
+      <form id="login-form" novalidate>
+        <div class="form-group">
+          <label for="username">AD Username <span class="required">*</span></label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            class="form-control"
+            placeholder="e.g. jdoe"
+            autocomplete="username"
+            autocapitalize="off"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password <span class="required">*</span></label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            class="form-control"
+            placeholder="Your Active Directory password"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+
+        <button id="btn-login" type="submit" class="btn btn-primary">
+          <span id="btn-login-text">Sign In</span>
+          <span id="btn-login-spinner" class="spinner hidden" aria-hidden="true"></span>
+        </button>
+      </form>
+    </div>
+
+    <div class="login-footer">
+      Access restricted to members of <strong>BulkMailer-Users</strong> group.<br />
+      Contact IT for access requests. &nbsp;·&nbsp; <span style="opacity:.6">v1.0</span>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // If already logged in, redirect to app
+      fetch('/api/auth/me')
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) window.location.href = '/dashboard.html';
+        })
+        .catch(() => {}); // not logged in — stay on login
+
+      const form    = document.getElementById('login-form');
+      const alert   = document.getElementById('login-alert');
+      const btnText = document.getElementById('btn-login-text');
+      const spinner = document.getElementById('btn-login-spinner');
+      const btn     = document.getElementById('btn-login');
+
+      function showAlert(msg) {
+        alert.textContent = msg;
+        alert.classList.remove('hidden');
+      }
+      function hideAlert() {
+        alert.classList.add('hidden');
+      }
+      function setLoading(on) {
+        btn.disabled = on;
+        spinner.classList.toggle('hidden', !on);
+        btnText.textContent = on ? 'Signing in…' : 'Sign In';
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideAlert();
+
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+
+        if (!username || !password) {
+          showAlert('Please enter your username and password.');
+          return;
+        }
+
+        setLoading(true);
+        try {
+          const res  = await fetch('/api/auth/login', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ username, password }),
+          });
+          const data = await res.json();
+
+          if (data.success) {
+            window.location.href = '/dashboard.html';
+          } else {
+            showAlert(data.error || 'Login failed. Please try again.');
+            setLoading(false);
+          }
+        } catch (err) {
+          showAlert('Network error. Please check your connection and try again.');
+          setLoading(false);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

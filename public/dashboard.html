@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — Bulk Mailer</title>
+  <meta name="description" content="Bulk Mailer dashboard — overview of your bulk mail activity." />
+  <link rel="stylesheet" href="/assets/style.css" />
+  <style>
+    /* ── Dashboard-specific styles ── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .kpi-card {
+      background: var(--clr-surface);
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+
+    .kpi-card:hover {
+      box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+      transform: translateY(-2px);
+    }
+
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--kpi-accent, var(--clr-accent));
+    }
+
+    .kpi-card.accent-green  { --kpi-accent: #22c55e; }
+    .kpi-card.accent-orange { --kpi-accent: var(--clr-accent); }
+    .kpi-card.accent-red    { --kpi-accent: #ef4444; }
+    .kpi-card.accent-blue   { --kpi-accent: #3b82f6; }
+    .kpi-card.accent-purple { --kpi-accent: #a855f7; }
+
+    .kpi-icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .kpi-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--clr-text);
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .kpi-label {
+      font-size: 12px;
+      color: var(--clr-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 500;
+    }
+
+    .kpi-sub {
+      font-size: 11px;
+      color: var(--clr-muted);
+      margin-top: 4px;
+    }
+
+    .kpi-skeleton .kpi-value {
+      background: var(--clr-border);
+      border-radius: 4px;
+      color: transparent;
+      animation: shimmer 1.4s infinite linear;
+      background-size: 200% 100%;
+      background-image: linear-gradient(90deg,
+        var(--clr-border) 25%,
+        var(--clr-surface-hover, #f0f0f0) 50%,
+        var(--clr-border) 75%
+      );
+    }
+
+    .active-badge {
+      display: inline-block;
+      background: #22c55e20;
+      color: #16a34a;
+      border: 1px solid #22c55e40;
+      border-radius: 99px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      animation: pulse-badge 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-badge {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.6; }
+    }
+
+    .recent-jobs-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .job-row-dash {
+      display: grid;
+      grid-template-columns: 48px 1fr 100px 80px 80px 90px 120px;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--clr-border);
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+
+    .job-row-dash:last-child { border-bottom: none; }
+
+    .job-row-dash:hover {
+      background: var(--clr-hover, rgba(0,0,0,0.03));
+    }
+
+    .job-row-dash-head {
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--clr-muted);
+      background: var(--clr-bg);
+      border-bottom: 2px solid var(--clr-border);
+    }
+
+    .job-row-dash-head:hover { background: var(--clr-bg); }
+
+    .mini-progress {
+      background: var(--clr-border);
+      border-radius: 99px;
+      height: 6px;
+      overflow: hidden;
+      margin-top: 3px;
+    }
+
+    .mini-progress-fill {
+      height: 100%;
+      border-radius: 99px;
+      background: var(--clr-accent);
+      transition: width 0.4s;
+    }
+
+    .mini-progress-fill.fill-done   { background: #22c55e; }
+    .mini-progress-fill.fill-failed { background: #ef4444; }
+
+    .quick-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 680px) {
+      .job-row-dash {
+        grid-template-columns: 40px 1fr 70px 80px;
+      }
+      .job-row-dash > :nth-child(n+5) { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="site-header" role="banner">
+  <div class="logo">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2"/>
+      <path d="m22 7-10 7L2 7"/>
+    </svg>
+    <span>Bulk Mailer</span>
+    <span class="badge">Beta</span>
+  </div>
+  <div class="user-bar">
+    <nav>
+      <a href="/dashboard.html" class="active" id="nav-dash">Dashboard</a>
+      <a href="/app.html"       id="nav-compose">New Job</a>
+      <a href="/logs.html"      id="nav-logs">Send Logs</a>
+    </nav>
+    <span id="user-dept-badge" class="dept-badge" title="Logged-in user"></span>
+    <button id="btn-logout" type="button">Sign Out</button>
+  </div>
+</header>
+
+<!-- ── Main ── -->
+<main class="main-container" role="main">
+
+  <div id="global-alert" class="alert hidden" role="alert"></div>
+
+  <!-- ── Quick Actions ── -->
+  <div class="quick-actions">
+    <a href="/app.html" class="btn btn-primary">+ New Job</a>
+    <a href="/logs.html" class="btn btn-outline">View Send Logs</a>
+    <button id="btn-refresh" class="btn btn-outline">↻ Refresh</button>
+  </div>
+
+  <!-- ── KPI Cards ── -->
+  <div class="kpi-grid" id="kpi-grid" aria-label="Statistics">
+
+    <div class="kpi-card accent-blue kpi-skeleton" id="kpi-total-jobs">
+      <span class="kpi-icon">📋</span>
+      <div class="kpi-value" id="kpi-val-total-jobs">—</div>
+      <div class="kpi-label">Total Jobs</div>
+      <div class="kpi-sub" id="kpi-sub-month-jobs">this month: —</div>
+    </div>
+
+    <div class="kpi-card accent-green kpi-skeleton" id="kpi-total-sent">
+      <span class="kpi-icon">✉️</span>
+      <div class="kpi-value" id="kpi-val-total-sent">—</div>
+      <div class="kpi-label">Emails Sent</div>
+      <div class="kpi-sub" id="kpi-sub-month-sent">this month: —</div>
+    </div>
+
+    <div class="kpi-card accent-orange kpi-skeleton" id="kpi-success-rate">
+      <span class="kpi-icon">📈</span>
+      <div class="kpi-value" id="kpi-val-success-rate">—</div>
+      <div class="kpi-label">Success Rate</div>
+      <div class="kpi-sub" id="kpi-sub-failed">failed: —</div>
+    </div>
+
+    <div class="kpi-card accent-purple kpi-skeleton" id="kpi-active">
+      <span class="kpi-icon">⚡</span>
+      <div class="kpi-value" id="kpi-val-active">—</div>
+      <div class="kpi-label">Active Jobs</div>
+      <div class="kpi-sub" id="kpi-sub-active">&nbsp;</div>
+    </div>
+
+  </div>
+
+  <!-- ── Recent Jobs ── -->
+  <div class="card">
+    <div class="card-header recent-jobs-header">
+      <h2>Recent Jobs</h2>
+      <a href="/logs.html" class="btn btn-sm btn-outline">View All →</a>
+    </div>
+    <div class="card-body" style="padding:0" id="recent-jobs-body">
+      <div class="text-center text-muted" style="padding:40px">
+        <div class="spinner" style="margin:0 auto 12px"></div>
+        Loading recent jobs…
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+
+  // ── Auth check ──
+  async function init() {
+    const meRes  = await fetch('/api/auth/me');
+    const meData = await meRes.json();
+    if (!meData.success) {
+      window.location.href = '/index.html';
+      return;
+    }
+    const user = meData.user;
+    $('user-dept-badge').textContent = `${user.displayName || user.username} · ${user.department || ''}`;
+
+    $('btn-logout').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/index.html';
+    });
+
+    $('btn-refresh').addEventListener('click', () => loadStats());
+
+    await loadStats();
+
+    // Auto-refresh if there are active jobs
+    startAutoRefresh();
+  }
+
+  // ── Load stats from API ──
+  async function loadStats() {
+    try {
+      const res  = await fetch('/api/stats');
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Failed to load stats');
+      renderKPIs(data.stats);
+      renderRecentJobs(data.stats.recentJobs);
+    } catch (err) {
+      showAlert('Could not load dashboard data: ' + err.message, 'error');
+    }
+  }
+
+  // ── KPI Cards ──
+  function renderKPIs(s) {
+    // Remove skeleton class
+    document.querySelectorAll('.kpi-skeleton').forEach((el) => el.classList.remove('kpi-skeleton'));
+
+    $('kpi-val-total-jobs').textContent   = s.totalJobs.toLocaleString();
+    $('kpi-sub-month-jobs').textContent   = `this month: ${s.thisMonthJobs.toLocaleString()}`;
+
+    $('kpi-val-total-sent').textContent   = s.totalSent.toLocaleString();
+    $('kpi-sub-month-sent').textContent   = `this month: ${s.thisMonthSent.toLocaleString()}`;
+
+    $('kpi-val-success-rate').textContent = s.successRate !== null ? `${s.successRate}%` : 'N/A';
+    $('kpi-sub-failed').textContent       = `failed: ${s.totalFailed.toLocaleString()}`;
+
+    const activeEl = $('kpi-val-active');
+    if (s.activeJobs > 0) {
+      activeEl.innerHTML = `${s.activeJobs} <span class="active-badge">LIVE</span>`;
+      $('kpi-sub-active').textContent = s.activeJobs === 1 ? '1 job running' : `${s.activeJobs} jobs running`;
+    } else {
+      activeEl.textContent            = '0';
+      $('kpi-sub-active').textContent = 'no active jobs';
+    }
+  }
+
+  // ── Recent Jobs Table ──
+  function renderRecentJobs(jobs) {
+    const body = $('recent-jobs-body');
+    if (!jobs || jobs.length === 0) {
+      body.innerHTML = '<div class="text-center text-muted" style="padding:40px">No jobs yet. <a href="/app.html">Create your first job →</a></div>';
+      return;
+    }
+
+    let html = `
+      <div class="job-row-dash job-row-dash-head" role="row">
+        <span>ID</span>
+        <span>From</span>
+        <span>Progress</span>
+        <span>Status</span>
+        <span>Sent</span>
+        <span>Failed</span>
+        <span>Created</span>
+      </div>
+    `;
+
+    for (const job of jobs) {
+      const pct      = job.total_rows > 0
+        ? Math.round(((job.sent_count + job.failed_count) / job.total_rows) * 100)
+        : 0;
+      const fillClass = job.status === 'completed' ? 'fill-done'
+                      : job.failed_count > 0        ? 'fill-failed'
+                      : '';
+
+      html += `
+        <a class="job-row-dash" href="/logs.html?jobId=${job.id}" role="row" style="text-decoration:none;color:inherit">
+          <span class="text-muted">#${job.id}</span>
+          <span title="${esc(job.from_address)}">${esc(truncate(job.from_address, 28))}</span>
+          <span>
+            <div style="font-size:11px;color:var(--clr-muted);margin-bottom:2px">${pct}%</div>
+            <div class="mini-progress">
+              <div class="mini-progress-fill ${fillClass}" style="width:${pct}%"></div>
+            </div>
+          </span>
+          <span>${statusBadge(job.status)}</span>
+          <span class="text-success" style="color:#16a34a">${job.sent_count}</span>
+          <span ${job.failed_count > 0 ? 'style="color:#dc2626"' : 'class="text-muted"'}>${job.failed_count}</span>
+          <span class="text-muted" title="${new Date(job.created_at).toLocaleString()}">${timeAgo(job.created_at)}</span>
+        </a>
+      `;
+    }
+
+    body.innerHTML = html;
+  }
+
+  // ── Auto-refresh when jobs are active ──
+  let refreshTimer = null;
+  function startAutoRefresh() {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(async () => {
+      const res  = await fetch('/api/stats').catch(() => null);
+      if (!res) return;
+      const data = await res.json().catch(() => null);
+      if (!data || !data.success) return;
+      renderKPIs(data.stats);
+      renderRecentJobs(data.stats.recentJobs);
+      if (data.stats.activeJobs === 0) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
+    }, 10000);
+  }
+
+  // ── Helpers ──
+  function esc(s) {
+    if (!s) return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function truncate(s, n) {
+    if (!s) return '';
+    return s.length > n ? s.slice(0, n) + '…' : s;
+  }
+
+  function timeAgo(iso) {
+    if (!iso) return '—';
+    const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+    if (diff < 60)   return 'just now';
+    if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+    return `${Math.floor(diff/86400)}d ago`;
+  }
+
+  function statusBadge(status) {
+    const map = {
+      pending:   'badge badge-info',
+      running:   'badge badge-warning',
+      paused:    'badge badge-warning',
+      completed: 'badge badge-success',
+      failed:    'badge badge-error',
+    };
+    const cls = map[status] || 'badge';
+    return `<span class="${cls}">${status}</span>`;
+  }
+
+  function showAlert(msg, type = 'error') {
+    const el = $('global-alert');
+    el.textContent = msg;
+    el.className   = `alert alert-${type}`;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 6000);
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>
