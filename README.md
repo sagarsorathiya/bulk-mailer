@@ -487,3 +487,7 @@ bulk-mailer/
 ---
 
 For a production deployment walkthrough see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
